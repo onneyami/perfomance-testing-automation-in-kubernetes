@@ -1,0 +1,10 @@
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.tar
+*.csv
+*.json
+charts/
+*.tgz

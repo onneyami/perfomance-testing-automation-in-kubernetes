@@ -1,0 +1,48 @@
+name: Performance Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Create kind cluster
+      uses: helm/kind-action@v1
+      with:
+        cluster_name: kind
+
+    - name: Deploy app
+      run: |
+        kubectl apply -f app/namespace.yaml
+        kubectl apply -f app/deployment.yaml
+        kubectl apply -f app/service.yaml
+        kubectl wait --for=condition=ready pod -l app=httpbin -n performance-test --timeout=60s
+
+    - name: Install k6
+      run: |
+        sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+        echo "deb https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+        sudo apt-get update
+        sudo apt-get install k6
+
+    - name: Run k6 test
+      env:
+        TARGET_URL: http://httpbin.performance-test.svc.cluster.local
+      run: |
+        k6 run --out influxdb=http://influxdb.performance-test.svc.cluster.local:8086/k6?token=mytoken&org=myorg&bucket=k6 k6-tests/script.js
+
+    - name: Check k6 exit code
+      if: failure()
+      run: echo "Performance test failed" && exit 1
+
+    - name: Port-forward InfluxDB
+      run: |
+        kubectl port-forward -n performance-test svc/influxdb 8086:8086 &
+        sleep 5
